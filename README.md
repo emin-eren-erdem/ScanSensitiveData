@@ -9,6 +9,12 @@ This PowerShell script scans all drives on your system for potential sensitive i
 - Saves results to a specified output file.
 - Filters only text-based files to improve performance.
 
+## Performance and User Experience Enhancements
+
+- **Progress Bar**: The script includes a progress bar to provide real-time feedback on the scanning progress. This makes it easier for users to see what's happening during the scan.
+- **Reduced Memory Usage**: To improve performance, the script processes files line by line instead of loading the entire file into memory. This significantly reduces the RAM usage, making the scan more efficient, especially for large files.
+- **User-Friendly Output**: The script outputs the current drive being scanned and keeps the user informed about the progress, making the tool more user-friendly.
+
 ## Usage
 
 1. Clone this repository to your local machine.

@@ -32,14 +32,15 @@ function Scan-File {
     )
 
     try {
-        # Read file content as string
-        $content = Get-Content -Path $file -Raw -ErrorAction Stop
-
-        # Check each pattern against the content
-        foreach ($pattern in $patterns) {
-            if ($content -match $pattern) {
-                # Write the matched content to the output file
-                Add-Content -Path $outputFile -Value "Match found in ${file}: $($matches[0])"
+        # Process the file line by line to reduce memory usage
+        Get-Content -Path $file -ReadCount 0 | ForEach-Object {
+            $line = $_
+            # Check each pattern against the line
+            foreach ($pattern in $patterns) {
+                if ($line -match $pattern) {
+                    # Write the matched content to the output file
+                    Add-Content -Path $outputFile -Value "Match found in ${file}: $($matches[0])"
+                }
             }
         }
     }
@@ -49,12 +50,26 @@ function Scan-File {
     }
 }
 
+# Total files to scan (for progress bar calculation)
+$totalFiles = 0
+foreach ($drive in $drives) {
+    $totalFiles += (Get-ChildItem -Path $drive.Root -Recurse -ErrorAction SilentlyContinue -Force | Measure-Object).Count
+}
+
+# Progress bar initialization
+$currentFileCount = 0
+
 # Scan each drive
 foreach ($drive in $drives) {
+    Write-Output "Scanning drive: $($drive.Name)"
     # Recursively get all files on the drive, ignoring errors
     $files = Get-ChildItem -Path $drive.Root -Recurse -ErrorAction SilentlyContinue -Force
 
     foreach ($file in $files) {
+        # Update progress bar
+        $currentFileCount++
+        Write-Progress -Activity "Scanning Files" -Status "$currentFileCount of $totalFiles files" -PercentComplete (($currentFileCount / $totalFiles) * 100)
+
         # Filter only text-based files for scanning
         if ($file.Extension -in ".txt", ".csv", ".log", ".xml", ".json", ".html", ".md") {
             Scan-File -file $file.FullName
