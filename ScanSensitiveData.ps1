@@ -28,6 +28,12 @@ $excludePaths = @(
     'C:\Program Files\Windows Defender Advanced Threat Protection\Classification\Configuration'
 )
 
+# Escape backslashes in paths for regex pattern
+$escapedExcludePaths = $excludePaths | ForEach-Object { [Regex]::Escape($_) }
+
+# Combine escaped paths into a single pattern
+$excludePattern = $escapedExcludePaths -join '|'
+
 # Get all logical drives
 $drives = Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Free -gt 0 }
 
@@ -36,6 +42,10 @@ $outputFile = "$([System.IO.Path]::Combine($HOME, 'ScanResults.txt'))"
 
 # Create or clear the output file, try in home directory first
 try {
+    if (-not (Test-Path $HOME)) {
+        New-Item -ItemType Directory -Path $HOME -ErrorAction Stop
+        Write-Output "Cannot create ${outputFile} in your desktop. Trying another location..."
+    }
     Clear-Content -Path $outputFile -ErrorAction Stop
 }
 catch {
@@ -78,10 +88,41 @@ function Scan-File {
     }
 }
 
+# Function to process each directory and file
+function Process-Directory {
+    param (
+        [string]$directory
+    )
+
+    try {
+        # Recursively get all files in the directory, excluding certain paths
+        $files = Get-ChildItem -Path $directory -Recurse -ErrorAction Stop -Force -Directory | Where-Object { $_.FullName -notmatch $excludePattern }
+
+        foreach ($file in $files) {
+            # Update progress bar
+            $currentFileCount++
+            Write-Progress -Activity "Scanning Files" -Status "$currentFileCount of $totalFiles files" -PercentComplete (($currentFileCount / $totalFiles) * 100)
+
+            # Filter only text-based files for scanning
+            if ($file.Extension -in ".txt", ".csv", ".log", ".xml", ".json", ".html", ".md") {
+                Scan-File -file $file.FullName
+            }
+        }
+    }
+    catch {
+        Write-Output "Access denied or error accessing directory: $directory - $_"
+    }
+}
+
 # Total files to scan (for progress bar calculation)
 $totalFiles = 0
 foreach ($drive in $drives) {
-    $totalFiles += (Get-ChildItem -Path $drive.Root -Recurse -ErrorAction Stop -Force | Where-Object { $_.FullName -notmatch ($excludePaths -join '|') } | Measure-Object).Count
+    try {
+        $totalFiles += (Get-ChildItem -Path $drive.Root -Recurse -ErrorAction Stop -Force -File | Where-Object { $_.FullName -notmatch $excludePattern } | Measure-Object).Count
+    }
+    catch {
+        Write-Output "Error accessing drive $($drive.Name): $_"
+    }
 }
 
 # Progress bar initialization
@@ -90,25 +131,7 @@ $currentFileCount = 0
 # Scan each drive
 foreach ($drive in $drives) {
     Write-Output "Scanning drive: $($drive.Name)"
-    # Recursively get all files on the drive, stop on error
-    try {
-        $files = Get-ChildItem -Path $drive.Root -Recurse -ErrorAction Stop -Force | Where-Object { $_.FullName -notmatch ($excludePaths -join '|') }
-    }
-    catch {
-        Write-Output "Error: Unable to access files on drive $($drive.Name). The scan cannot proceed."
-        exit 1
-    }
-
-    foreach ($file in $files) {
-        # Update progress bar
-        $currentFileCount++
-        Write-Progress -Activity "Scanning Files" -Status "$currentFileCount of $totalFiles files" -PercentComplete (($currentFileCount / $totalFiles) * 100)
-
-        # Filter only text-based files for scanning
-        if ($file.Extension -in ".txt", ".csv", ".log", ".xml", ".json", ".html", ".md") {
-            Scan-File -file $file.FullName
-        }
-    }
+    Process-Directory -directory $drive.Root
 }
 
 Write-Output "Scan completed. Results saved to $outputFile"
